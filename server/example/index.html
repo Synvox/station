@@ -1,0 +1,52 @@
+<script>
+  const userId = '1cbee1cb-b63c-4089-9d6a-54625cd16172'
+  let ws = null
+
+  const callbacks = {}
+
+  function connect() {
+    ws = new WebSocket("ws://localhost:8080")
+
+
+    ws.onopen = (event) => {
+      ws.send(userId)
+    }
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      if (!data) return
+      if (data.type === 'REPLY' && callbacks[data.id])
+        return callbacks[data.id](data.payload)
+      console.log(data)
+    }
+
+    ws.onclose = () => {
+      setTimeout(() => connect(), 1000)
+    }
+
+    window.send = (m) => new Promise((resolve, reject) => {
+      const id = Date.now() + Math.random()
+
+      ws.send(JSON.stringify({
+        id,
+        payload: m
+      }))
+
+      callbacks[id] = (msg) => {
+        const {
+          ok,
+          data,
+          error
+        } = msg
+
+        delete callbacks[id]
+
+        if (ok) return resolve(data)
+        return reject(new Error(error))
+      }
+    })
+  }
+
+  connect()
+
+</script>
