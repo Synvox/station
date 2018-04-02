@@ -9,5 +9,6 @@ export default raw(({ Sequence, Scope, long, string, bool }) => ({
   version: long()
     .default(0)
     .index(),
-  type: string()
+  type: string(),
+  origin: string().nullable()
 }))

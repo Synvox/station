@@ -4,54 +4,76 @@ export default class Connection {
     this.server = server
     this.conn = conn
     this.user = user
-    this.alive = true
+    this.once = null
 
-    const reply = val => {
+    this.reply = (val, once) => {
+      if (once) this.once = once
       conn.send(JSON.stringify(val))
     }
 
-    const unsubscribe = server.emitter.addUser(user.id, reply)
+    const unsubscribe = server.emitter.addUser(user.id, this.reply)
 
     conn.on('pong', () => (this.alive = true))
 
     conn.on('message', str => {
-      this.parseIncoming(JSON.parse(str), reply)
+      if (typeof str === 'string') str = JSON.parse(str)
+
+      let cancel = false
+      const once = this.once
+      if (once) once(str, () => (cancel = true))
+
+      if (this.once && !cancel) {
+        if (this.once === once) this.once = null
+      } else {
+        this.parseIncoming(str, this.reply)
+      }
     })
 
-    reply({ type: 'USER', payload: user })
-
-    this.server.dispatch({ type: 'getScopes' }, this.user, payload => {
-      reply({
-        type: 'PATCH_SCOPES',
-        payload: payload.data
-      })
-    })
-
-    this.server.dispatch({ type: 'getActions' }, this.user, payload => {
-      reply({
-        type: 'ACTIONS',
-        payload: payload.data
-      })
-    })
-
-    this.server.dispatch({ type: 'getModels' }, this.user, payload => {
-      reply({
-        type: 'MODELS',
-        payload: payload.data
-      })
-    })
+    this.init()
 
     conn.on('close', () => {
       unsubscribe()
     })
   }
 
+  init() {
+    this.server.dispatch(
+      { type: 'getScopes' },
+      this.user,
+      ({ data: scopes }) => {
+        this.server.dispatch(
+          { type: 'getActions' },
+          this.user,
+          ({ data: actions }) => {
+            this.server.dispatch(
+              { type: 'getModels' },
+              this.user,
+              ({ data: models }) => {
+                this.reply({
+                  type: 'INIT',
+                  payload: {
+                    user: this.user,
+                    scopes,
+                    actions,
+                    models
+                  }
+                })
+              }
+            )
+          }
+        )
+      }
+    )
+  }
+
   async parseIncoming(msg, reply) {
     if (!msg) return
     const { id, payload: input } = msg
 
-    this.server.dispatch(input, this.user, payload => {
-      reply({ id, type: 'REPLY', payload })
+    this.server.dispatch(input, this.user, (payload, once) => {
+      if (!payload) throw new Error('No payload specified.')
+      if (payload.type) return reply(payload, once)
+      reply({ id, type: 'REPLY', payload }, once)
     })
   }
 

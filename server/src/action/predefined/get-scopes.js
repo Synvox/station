@@ -22,6 +22,7 @@ async function getChildScopes({ Scope, scope, role, user, permissionId }) {
         {
           id: scope.id,
           version: Number(scope.version),
+          type: scope.type,
           permission: {
             id: permissionId,
             role
@@ -55,6 +56,7 @@ export default async (_, { models: { Permission, Scope }, user }) => {
           {
             id: scope.id,
             version: Number(scope.version),
+            type: scope.type,
             permission: {
               id,
               role

@@ -4,15 +4,16 @@ import * as predefined from './predefined'
 const eventsSym = Symbol()
 
 export default class Action {
-  constructor(name, resolver, models, sequelize, emitter) {
+  constructor(name, resolver, models, sequelize, emitter, uploadPath) {
     this.name = name
     this.resolver = resolver
     this.models = models
     this.sequelize = sequelize
     this.emitter = emitter
+    this.uploadPath = uploadPath
   }
 
-  async dispatch(payload, user, actions, transaction = null) {
+  async dispatch(payload, user, actions, reply, transaction = null) {
     const deferCommit = Boolean(transaction)
     if (!transaction) {
       transaction = await this.sequelize.transaction({
@@ -23,13 +24,15 @@ export default class Action {
 
     const resolution = createContext({
       transaction,
-      models: this.models,
+      uploadPath: this.uploadPath,
       emit: fn => transaction[eventsSym].push(fn),
       user,
+      reply,
+      models: this.models,
       actions: Object.entries(actions)
         .map(([key, action]) => [
           key,
-          payload => action(payload, user, actions, transaction)
+          payload => action(payload, user, actions, reply, transaction)
         ])
         .reduce(
           (obj, [key, item]) =>
@@ -59,7 +62,7 @@ export default class Action {
     }
   }
 
-  static initActions(sequelize, emitter, models, definition) {
+  static initActions(sequelize, emitter, uploadPath, models, definition) {
     const actions = {
       ...predefined,
       ...definition
@@ -68,7 +71,7 @@ export default class Action {
     return Object.entries(actions)
       .map(([key, resolver]) => [
         key,
-        new Action(key, resolver, models, sequelize, emitter)
+        new Action(key, resolver, models, sequelize, emitter, uploadPath)
       ])
       .map(([key, action]) => [key, action.dispatch.bind(action)])
       .reduce(

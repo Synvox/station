@@ -6,5 +6,5 @@ export default async (_, { models }) => {
     ...userDefined
   } = models
 
-  return Object.keys(userDefined)
+  return Object.entries(userDefined).map(([_, model]) => model.pluralName)
 }

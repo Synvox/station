@@ -6,7 +6,8 @@ import dispatch from './dispatch'
 import Connection from './connection'
 
 export default class Server {
-  constructor(sequelize, redisUrl, definition) {
+  constructor({ sequelize, redisUrl, uploadPath }, definition) {
+    this.uploadPath = uploadPath
     this.emitter = new Emitter(redisUrl)
 
     this.auth = definition.auth
@@ -14,6 +15,7 @@ export default class Server {
     this.actions = Action.initActions(
       sequelize,
       this.emitter,
+      uploadPath,
       this.models,
       definition.actions
     )

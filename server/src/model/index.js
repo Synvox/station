@@ -1,4 +1,4 @@
-import { tableize } from 'inflection'
+import { tableize, pluralize, camelize } from 'inflection'
 import Attribute from './attribute'
 import typeMap from './type-map'
 import * as predefined from './predefined'
@@ -53,7 +53,7 @@ export default class Model {
       .reduce(
         (obj, [key, item]) =>
           Object.assign(obj, {
-            [key]: item.toSequelize(Sequelize)
+            [key]: item
           }),
         {}
       )
@@ -66,7 +66,7 @@ export default class Model {
         .map(item => item.field)
     ].map(field => ({ fields: [field], method: 'BTREE' }))
 
-    return this.sequelize.define(this.name, attributes, {
+    const model = this.sequelize.define(this.name, attributes, {
       indexes,
       tableName: this.tableName,
       freezeTableName: true,
@@ -74,6 +74,10 @@ export default class Model {
         ...getters
       }
     })
+
+    model.pluralName = pluralize(camelize(this.name, true))
+
+    return model
   }
 
   static build(fn) {
@@ -101,7 +105,8 @@ export default class Model {
         sequelize,
         name,
         Object.entries(attributes).reduce((obj, [key, item]) => {
-          item.setName(key)
+          if (typeof item !== 'function') item.setName(key)
+
           return Object.assign(obj, {
             [item.name]: item
           })

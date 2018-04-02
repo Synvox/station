@@ -1,3 +1,6 @@
+import fs from 'fs'
+import path from 'path'
+
 const getParents = async ({ Scope, Permission, scopeId }) => {
   const Op = Scope.sequelize.constructor.Op
 
@@ -32,6 +35,7 @@ const getParents = async ({ Scope, Permission, scopeId }) => {
           id: scope.id,
           userId: permission.userId,
           version: Number(scope.version),
+          type: scope.type,
           permission: {
             id: permission.id,
             role: permission.role
@@ -41,6 +45,30 @@ const getParents = async ({ Scope, Permission, scopeId }) => {
     .reduce((arr, item) => arr.concat(item), [])
 }
 
+const createFile = (file, totalSize) => {
+  const stream = fs.createWriteStream(path.normalize(file), { flags: 'a' })
+  let ended = false
+  let size = 0
+  return data =>
+    new Promise((resolve, reject) => {
+      if (!data) {
+        if (!ended) stream.end()
+        ended = true
+        resolve()
+      } else {
+        size += data.byteLength
+        if (size > totalSize) {
+          return reject(
+            new Error(
+              `File exceeds declared size. ${size} is larger than ${totalSize}`
+            )
+          )
+        }
+        stream.write(data, resolve)
+      }
+    })
+}
+
 export default context =>
   Object.assign(context, {
     fail: async message => {
@@ -48,7 +76,33 @@ export default context =>
       throw { error: message }
     },
 
+    upload: async file => {
+      const write = createFile(`${context.uploadPath}/${file.id}`)
+
+      await new Promise(resolve => {
+        const load = () => {
+          context.reply({ type: 'YIELD' }, async (binary, cancel) => {
+            if (binary === 'END') {
+              context.reply({ type: 'END' })
+              resolve()
+              await write()
+            }
+
+            if (typeof binary === 'string') return cancel()
+
+            await write(binary)
+            load()
+          })
+        }
+
+        load()
+      })
+
+      return file
+    },
+
     createSequence: async scope => {
+      if (!scope) throw new Error('No scope specified to createSequence')
       const {
         models: { Scope, Sequence, Permission },
         transaction,
@@ -57,7 +111,7 @@ export default context =>
 
       const newSequence = await Sequence.create(
         {
-          version: scope.version + 1,
+          version: Number(scope.version) + 1,
           scopeId: scope.id
         },
         { transaction }
@@ -82,6 +136,7 @@ export default context =>
               [parent.id]: {
                 id: parent.id,
                 version: parent.version,
+                type: parent.type,
                 permission: {
                   id: parent.permission.id,
                   role: parent.permission.role
@@ -138,6 +193,7 @@ export default context =>
               [parent.id]: {
                 id: parent.id,
                 version: parent.version,
+                type: parent.type,
                 permission: {
                   id: parent.permission.id,
                   role: parent.permission.role
@@ -173,6 +229,7 @@ export default context =>
             [permission.scopeId]: {
               id: permission.scopeId,
               version: scope.version,
+              type: scope.type,
               permission: {
                 id: permission.id,
                 role: permission.role

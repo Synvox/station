@@ -4,7 +4,7 @@ export default (models, actions) => (input, user, reply) => {
   if (!actions[type])
     return reply({ ok: false, error: `No action named "${type}"` })
 
-  actions[type](payload, user, actions)
+  actions[type](payload, user, actions, reply)
     .then(data =>
       reply({
         ok: true,

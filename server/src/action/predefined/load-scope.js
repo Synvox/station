@@ -35,13 +35,13 @@ export default async ({ scopeId, version }, { models }) => {
               {}
             )
       return {
-        [key]: Object.keys(items).length === 0 ? undefined : items
+        [model.pluralName]: Object.keys(items).length === 0 ? undefined : items
       }
     })
   )).reduce((obj, item) => Object.assign(obj, item), {})
 
   return {
-    version: scope.version,
+    version: Number(scope.version),
     patch
   }
 }

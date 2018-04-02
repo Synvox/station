@@ -1,6 +1,8 @@
 <script>
   const userId = '1cbee1cb-b63c-4089-9d6a-54625cd16172'
   let ws = null
+  window.store = {}
+  let send = window.send = () => {}
 
   const callbacks = {}
 
@@ -18,13 +20,15 @@
       if (data.type === 'REPLY' && callbacks[data.id])
         return callbacks[data.id](data.payload)
       console.log(data)
+      store = transform(reduce(store, data))
+      console.log(store)
     }
 
     ws.onclose = () => {
       setTimeout(() => connect(), 1000)
     }
 
-    window.send = (m) => new Promise((resolve, reject) => {
+    send = (m) => new Promise((resolve, reject) => {
       const id = Date.now() + Math.random()
 
       ws.send(JSON.stringify({
@@ -47,6 +51,106 @@
     })
   }
 
+  const reduce = (store, {
+    type,
+    payload
+  }) => {
+    return (({
+      'INIT': (store, payload) => ({
+        scopeData: {},
+        ...store,
+        ...payload
+      }),
+      'PATCH_SCOPES': (store, payload) => ({
+        ...store,
+        scopes: {
+          ...store.scopes,
+          ...payload
+        }
+      }),
+      'PATCH_SCOPE_DATA': (store, {
+        id,
+        version,
+        patch
+      }) => ({
+        ...store,
+        scopeData: {
+          ...store.scopeData,
+          [id]: {
+            ...(store.scopeData[id] || {}),
+            version,
+            data: {
+              ...((store.scopeData[id] || {}).data || {}),
+              ...payload.patch
+            }
+          }
+        }
+      })
+    })[type] || (() => store))(store, payload)
+  }
+
+  const transform = (state) => ({
+    ...state,
+    ...state.models.map(name => [name, (scopeId) => {
+      if (!state.scopes[scopeId]) throw new Error(`Scope ${scopeId} is not accessable to the user.`)
+      if (!state.scopeData[scopeId] ||
+        state.scopes[scopeId].version !== state.scopeData[scopeId].version) {
+        throw new Promise((resolve, reject) => {
+          return send({
+            type: 'loadScope',
+            payload: {
+              scopeId: scopeId,
+              version: (state.scopeData[scopeId] || {
+                version: 0
+              }).version
+            }
+          }).then((resolution) => {
+            store = transform(reduce(store, {
+              type: 'PATCH_SCOPE_DATA',
+              payload: {
+                id: scopeId,
+                ...resolution
+              }
+            }))
+
+            return state.scopeData[scopeId].data[name] || {}
+          })
+        })
+      } else {
+
+      }
+
+      if (!state.scopeData[scopeId] || !state.scopeData[scopeId].data[name]) return {}
+      return state.scopeData[scopeId].data[name] || {}
+    }]).reduce((obj, [key, item]) => Object.assign(obj, {
+      [key]: item
+    }), {})
+  })
+
+  class WithData {
+
+  }
+
+  function withData(mapState) {
+    return Child=>class WithDataWrapper extends WithData {
+      render() {
+        const {props} = this
+        return (
+          <Connect {...props} mapToProps={mapToProps}>
+            {mappedProps => <Child {...mappedProps} {...props} />}
+          </Connect>
+        )
+      }
+    }
+  }
+
   connect()
 
 </script>
+
+
+<!--
+connect(({data})=>({
+  comments: data.comments(scopeId)
+}))
+-->

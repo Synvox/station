@@ -1,14 +1,15 @@
 {
-  "name": "station",
+  "name": "@synvox/station-server",
   "source": "src/index.js",
-  "main": "index.js",
+  "main": "dist/index.js",
   "version": "0.0.1",
   "description": "",
   "keywords": [],
   "author": "",
   "license": "ISC",
   "scripts": {
-    "build": "babel ./src -s -d ./dist --ignore node_modules --ignore \\.test\\.js --copy-files",
+    "build":
+      "babel ./src -s -d ./dist --ignore node_modules --ignore \\.test\\.js --copy-files",
     "dev": "babel-node ./example"
   },
   "devDependencies": {
@@ -28,21 +29,14 @@
     "sqlite3": "^4.0.0"
   },
   "dependencies": {
-    "@hugmanrique/turbo-ws": "^0.1.0",
     "inflection": "^1.12.0",
+    "md5": "^2.2.1",
     "node-redis-pubsub": "^2.0.0",
     "sequelize": "^4.37.3",
     "ws": "^5.1.0"
   },
   "babel": {
-    "presets": [
-      "es2015",
-      "stage-0",
-      "react"
-    ],
-    "plugins": [
-      "transform-runtime",
-      "add-module-exports"
-    ]
+    "presets": ["es2015", "stage-0", "react"],
+    "plugins": ["transform-runtime", "add-module-exports"]
   }
 }

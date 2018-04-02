@@ -24,42 +24,70 @@ const sequelize = new Sequelize(
 
 const userId = '1cbee1cb-b63c-4089-9d6a-54625cd16172'
 
-new Station(sequelize, `redis://localhost:6379`, {
-  auth: async (token, { User }) => User.findById(token),
-  models: {
-    Domain: () => ({}),
-    Profile: ({ User }) => ({
-      user: User()
-    }),
-    Topic: ({ string }) => ({
-      name: string()
-    })
+new Station(
+  {
+    sequelize,
+    redis: `redis://localhost:6379`,
+    uploadPath: '/Users/ryan/temp/uploads'
   },
-  actions: {
-    createTopic: async (
-      { scopeId, name },
-      { models: { Topic, Scope }, transaction, createSequence, createScope }
-    ) => {
-      const domainScope = await Scope.findById(scopeId)
-      const sequence = await createSequence(domainScope)
-      const scope = await createScope(Topic, domainScope)
+  {
+    auth: async (token, { User }) => User.findById(token),
+    models: {
+      Domain: () => ({}),
+      Profile: ({ User }) => ({
+        user: User()
+      }),
+      Topic: ({ string }) => ({
+        name: string()
+      })
+    },
+    actions: {
+      createTopic: async (
+        { scopeId, name },
+        { models: { Topic, Scope }, transaction, createSequence, createScope }
+      ) => {
+        const domainScope = await Scope.findById(scopeId)
+        const sequence = await createSequence(domainScope)
+        const scope = await createScope(Topic, domainScope)
 
-      return await Topic.create(
-        {
-          id: scope.id,
-          name,
-          sequenceId: sequence.id
-        },
-        { transaction }
-      )
+        return await Topic.create(
+          {
+            id: scope.id,
+            name,
+            sequenceId: sequence.id
+          },
+          { transaction }
+        )
+      },
+      upload: async (
+        { scopeId, name, type, size },
+        { models: { File, Scope }, transaction, createSequence, upload }
+      ) => {
+        const domainScope = await Scope.findById(scopeId)
+        const sequence = await createSequence(domainScope)
+
+        const file = await File.create(
+          {
+            name,
+            type,
+            size,
+            sequenceId: sequence.id
+          },
+          { transaction }
+        )
+
+        await upload(file)
+
+        return file
+      }
     }
   }
-}).listen(8080, async ({ dispatch, models }) => {
+).listen(8080, async ({ dispatch, models }) => {
   const { Scope, Domain, User, Permission } = models
   await sequelize.sync({ force: true })
 
   const scope = await Scope.create({ type: Domain.name })
-  const user = await User.create({ id: userId })
+  const user = await User.create({ id: userId, email: 'ryan@allred.xyz' })
 
   await Permission.create({
     scopeId: scope.id,
