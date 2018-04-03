@@ -20,7 +20,7 @@ export default async ({ scopeId, version }, { models }) => {
   const sequenceIds = sequences.map(x => x.id)
 
   const patch = (await Promise.all(
-    Object.entries(userDefined).map(async ([key, model]) => {
+    Object.entries(userDefined).map(async ([_, model]) => {
       const items =
         sequenceIds.length === 0
           ? {}

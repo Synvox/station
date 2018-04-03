@@ -1,6 +1,5 @@
 import React from 'react'
-import createContext from 'create-react-context'
-import filterDeleted from './util/filter-deleted'
+import * as handlers from './handlers'
 
 let uniqueId = 0
 
@@ -11,7 +10,7 @@ export class Store {
     this.state = {}
     this.subscribers = new Set()
     this.callbacks = {}
-    this.lockedScopes = new Set()
+    this.lockedScopes = new Map()
     this.ws = null
     this.file = null
     this.userToken = getAuth()
@@ -23,10 +22,13 @@ export class Store {
         ready()
       }
     })
-    this.emitChange = () => this.subscribers.forEach(x => x())
+    this.emitChange = () => {
+      console.log('emitting change')
+      this.subscribers.forEach(x => x())
+    }
   }
   connect() {
-    const ws = (this.ws = new WebSocket('ws://localhost:8080'))
+    const ws = (this.ws = new WebSocket(`ws://${window.location.host}`))
 
     ws.onopen = () => {
       ws.send(this.userToken)
@@ -69,66 +71,24 @@ export class Store {
     }
   }
   reduce({ type, payload }) {
-    const state = ({
-      INIT: (store, payload) => ({
-        scopeData: {},
-        ...store,
-        ...payload
-      }),
-      PATCH_SCOPES: (store, payload) => ({
-        ...store,
-        scopes: {
-          ...store.scopes,
-          ...payload
-        }
-      }),
-      PATCH_SCOPE_DATA: (store, { id, version, patch }) => ({
-        ...store,
-        scopeData: {
-          ...store.scopeData,
-          [id]: {
-            ...(store.scopeData[id] || {}),
-            version,
-            data: {
-              ...((store.scopeData[id] || {}).data || {}),
-              ...Object.entries(patch)
-                .map(([name, obj]) => [
-                  name,
-                  filterDeleted({
-                    ...(((store.scopeData[id] || {}).data || {})[name] || {}),
-                    ...obj
-                  })
-                ])
-                .reduce(
-                  (obj, [key, item]) =>
-                    Object.assign(obj, {
-                      [key]: item
-                    }),
-                  {}
-                )
-            }
-          }
-        }
-      })
-    }[type] || (() => this.state))(this.state, payload)
+    const state = (handlers[type] || (() => this.state))(this.state, payload)
 
     this.state = this.transform(state)
 
     this.emitChange()
   }
-  transformActions(actions) {
+  transformActions({ _actions: actions }) {
     return actions
       .map(name => [
         name,
-        (payload, blob) => {
-          return this.send(
+        (payload, blob) =>
+          this.send(
             {
               type: name,
               payload
             },
             blob
           )
-        }
       ])
       .reduce(
         (obj, [key, item]) =>
@@ -139,24 +99,28 @@ export class Store {
       )
   }
   transformModels(state) {
-    return state.models
+    return state._models
       .map(name => [
         name,
         (...scopeIds) =>
           scopeIds
             .map(scopeId => {
-              if (!state.scopes[scopeId])
+              if (!state.scopes[scopeId]) {
                 throw new Error(
                   `Scope ${scopeId} is not accessable to the user.`
                 )
+              }
+
               if (
                 !state.scopeData[scopeId] ||
                 Number(state.scopes[scopeId].version) !==
                   Number(state.scopeData[scopeId].version)
               ) {
-                if (this.lockedScopes.has(scopeId)) return {}
-                this.lockedScopes.add(scopeId)
-                throw new Promise((resolve, reject) => {
+                if (this.lockedScopes.has(scopeId))
+                  throw this.lockedScopes.get(scopeId)
+
+                const promise = new Promise((resolve, reject) => {
+                  console.warn('promise send')
                   return this.send({
                     type: 'loadScope',
                     payload: {
@@ -169,6 +133,8 @@ export class Store {
                     }
                   })
                     .then(resolution => {
+                      console.warn('server response')
+                      this.lockedScopes.delete(scopeId)
                       this.reduce({
                         type: 'PATCH_SCOPE_DATA',
                         payload: {
@@ -176,20 +142,19 @@ export class Store {
                           ...resolution
                         }
                       })
-                      this.lockedScopes.delete(scopeId)
 
-                      return this.state.scopeData[scopeId].data[name] || {}
+                      console.warn('reduced')
+                      resolve()
                     })
                     .catch(reject)
                 })
+
+                this.lockedScopes.set(scopeId, promise)
+
+                throw promise
               }
 
-              if (
-                !state.scopeData[scopeId] ||
-                !state.scopeData[scopeId].data[name]
-              )
-                return {}
-              return state.scopeData[scopeId].data[name] || {}
+              return state.scopeData[scopeId].data[name]
             })
             .reduce((obj, item) => Object.assign(obj, item), {})
       ])
@@ -204,8 +169,8 @@ export class Store {
   transform(state) {
     return {
       ...state,
-      ...this.transformActions(state.actions),
-      ...this.transformModels(state)
+      actions: this.transformActions(state),
+      models: this.transformModels(state)
     }
   }
   subscribe(fn) {
@@ -247,47 +212,57 @@ export class Store {
   }
 }
 
-const { Provider: _Provider, Consumer } = createContext()
-
-function shallowCompare(a, b) {
-  for (let i in a) if (!(i in b)) return false
-  for (let i in b) if (a[i] !== b[i]) return false
-  return true
-}
-
 class WithData extends React.Component {
   constructor(props) {
     super(props)
-    const { defaultProps = () => {}, parentProps } = props
+    const { defaultProps, parentProps } = props
 
-    this.state = defaultProps(parentProps)
+    this.state = {
+      mappedState:
+        typeof defaultProps === 'function'
+          ? defaultProps(parentProps)
+          : defaultProps
+    }
   }
   componentWillMount() {
     const { store } = this.props
     this.unsubscribe = store.subscribe(() => this.update())
+    this.update()
+  }
+  componentWillReceiveProps() {
+    setImmediate(() => this.update())
   }
   componentWillUnmount() {
     this.unsubscribe()
   }
   update() {
-    const {
-      mapToProps,
-      defaultProps = () => {},
-      parentProps,
-      store
-    } = this.props
+    const { mapToProps, defaultProps, parentProps, store } = this.props
+
+    console.log('update called')
 
     let mappedState = null
     if (store.isReady !== true) {
-      mappedState = defaultProps(parentProps)
+      console.warn('store is not ready')
+      mappedState =
+        typeof defaultProps === 'function'
+          ? defaultProps(parentProps)
+          : defaultProps
     } else {
       try {
+        console.warn('mapping')
         mappedState = mapToProps(store.state, parentProps)
+        console.warn('mapping complete', mappedState)
       } catch (event) {
+        console.warn('mapping failed', mappedState)
         if (!(event instanceof Promise)) throw event
-        mappedState = defaultProps(parentProps)
+        console.warn('thrown', event)
+        mappedState =
+          typeof defaultProps === 'function'
+            ? defaultProps(parentProps)
+            : defaultProps
         event
           .then(() => {
+            console.warn('throw release', event)
             this.update()
           })
           .catch(error => {
@@ -296,12 +271,17 @@ class WithData extends React.Component {
       }
     }
 
-    if (!shallowCompare(mappedState, this.state)) {
-      this.setState(mappedState)
-    }
+    console.log('set state', mappedState)
+
+    this.setState({ mappedState })
   }
   render() {
-    return this.props.children(this.state)
+    if (this.state.mappedState == null) {
+      console.log('not rendering', this.state, this)
+      // setTimeout(() => this.update(), 1)
+      return null
+    }
+    return this.props.children(this.state.mappedState)
   }
 }
 
@@ -334,4 +314,5 @@ export function withData(mapState, defaultProps) {
   )
 }
 
+const { Provider: _Provider, Consumer } = React.createContext()
 export const Provider = _Provider

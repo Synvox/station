@@ -10,7 +10,9 @@ export default class Emitter {
   }
 
   addUser(userId, fn) {
-    this.subscribers[userId] = [...(this.subscribers[userId] || []), fn]
+    this.subscribers[userId] = this.subscribers[userId] || []
+    this.subscribers[userId].push(fn)
+    
     return () => {
       this.subscribers[userId].splice(this.subscribers[userId].indexOf(fn), 1)
       if (this.subscribers[userId].length === 0) {

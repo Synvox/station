@@ -49,15 +49,23 @@ export default class Connection {
               { type: 'getModels' },
               this.user,
               ({ data: models }) => {
-                this.reply({
-                  type: 'INIT',
-                  payload: {
-                    user: this.user,
-                    scopes,
-                    actions,
-                    models
+                this.server.dispatch(
+                  { type: 'getPeers', payload: { scopes } },
+                  this.user,
+                  ({ data: users }) => {
+                    console.log(users)
+                    this.reply({
+                      type: 'INIT',
+                      payload: {
+                        user: this.user,
+                        scopes,
+                        users,
+                        actions,
+                        models
+                      }
+                    })
                   }
-                })
+                )
               }
             )
           }

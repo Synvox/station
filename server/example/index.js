@@ -82,7 +82,7 @@ new Station(
       }
     }
   }
-).listen(8080, async ({ dispatch, models }) => {
+).listen({port: 8080}, async ({ dispatch, models }) => {
   const { Scope, Domain, User, Permission } = models
   await sequelize.sync({ force: true })
 

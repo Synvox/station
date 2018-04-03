@@ -150,7 +150,7 @@ export default context =>
       return newSequence
     },
 
-    createScope: async (entity, parentScope) => {
+    createScope: async (entity, parentScope, cascade) => {
       const {
         models: { Sequence, Scope, Permission },
         transaction,
@@ -160,7 +160,8 @@ export default context =>
       const scope = await Scope.create(
         {
           type: entity.name,
-          parentScopeId: parentScope ? parentScope.id : null
+          parentScopeId: parentScope ? parentScope.id : null,
+          cascade
         },
         { transaction }
       )
@@ -259,5 +260,19 @@ export default context =>
       )
 
       return permission
+    },
+
+    getRole: async (user, scope) => {
+      const { models: { Permission, Scope } } = context
+      while (scope) {
+        const permission = await Permission.findOne({
+          where: { scopeId: scope.id, userId: user.id }
+        })
+        if (permission) return permission.role
+        if (scope.parentScopeId && scope.cascade) {
+          scope = await Scope.findById(scope.parentScopeId)
+        }
+      }
+      return null
     }
   })

@@ -23,8 +23,13 @@ export default class Server {
     this.dispatch = dispatch(this.models, this.actions)
   }
 
-  listen(port, cb) {
-    const socketServer = new WebSocket.Server({ port }, () => cb(this))
+  listen({ port, server }, cb) {
+    const socketServer = new WebSocket.Server(
+      { port, server },
+      !server ? () => {} : () => cb(this)
+    )
+
+    if (server) cb(this)
 
     socketServer.on('connection', conn => {
       Connection.create(this, conn)
