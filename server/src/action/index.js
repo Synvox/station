@@ -43,15 +43,11 @@ export default class Action {
         )
     })
 
+    let result = null
+
     try {
-      const result = await this.resolver(payload, resolution)
+      result = await this.resolver(payload, resolution)
       if (!deferCommit) await transaction.commit()
-
-      transaction[eventsSym].forEach(fn =>
-        fn((...args) => this.emitter.emit(...args))
-      )
-
-      return result
     } catch (error) {
       if (error instanceof Error) {
         await transaction.rollback()
@@ -60,6 +56,14 @@ export default class Action {
 
       return error
     }
+
+    setTimeout(() => {
+      transaction[eventsSym].map(fn =>
+        fn((...args) => this.emitter.emit(...args))
+      )
+    }, 1000)
+
+    return result
   }
 
   static initActions(sequelize, emitter, uploadPath, models, definition) {

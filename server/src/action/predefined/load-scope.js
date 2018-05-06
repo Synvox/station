@@ -1,9 +1,26 @@
-export default async ({ scopeId, version }, { models }) => {
+export default async ({ scopeId, version }, { models, user }) => {
   const { Scope, Sequence, User: _User, ...userDefined } = models
+  const { Permission } = userDefined
 
   const Op = Scope.sequelize.constructor.Op
 
   const scope = await Scope.findById(scopeId)
+
+  const getPermission = async scope => {
+    let permission = await Permission.findOne({
+      where: { userId: user.id, scopeId: scope.id }
+    })
+
+    return (
+      permission ||
+      (scope.cascade && scope.parentScopeId
+        ? await getPermission(await Scope.findById(scope.parentScopeId))
+        : null)
+    )
+  }
+
+  const permission = await getPermission(scope)
+  if (!permission) throw new Error('Not authorized')
 
   const sequences = await Sequence.findAll({
     where: {
@@ -42,6 +59,11 @@ export default async ({ scopeId, version }, { models }) => {
 
   return {
     version: Number(scope.version),
-    patch
+    patch,
+    id: scopeId,
+    permission: {
+      id: permission.id,
+      role: permission.role
+    }
   }
 }

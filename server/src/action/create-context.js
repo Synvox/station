@@ -128,23 +128,27 @@ export default context =>
           scopeId: scope.id
         })
 
-        parents.forEach(parent => {
-          send({
-            type: 'PATCH_SCOPES',
-            userId: parent.userId,
-            payload: {
-              [parent.id]: {
-                id: parent.id,
-                version: parent.version,
-                type: parent.type,
-                permission: {
-                  id: parent.permission.id,
-                  role: parent.permission.role
+        await Promise.all(
+          parents.map(async parent => {
+            await send({
+              type: 'PATCH',
+              userId: parent.userId,
+              payload: {
+                scopes: {
+                  [parent.id]: {
+                    id: parent.id,
+                    version: parent.version,
+                    type: parent.type,
+                    permission: {
+                      id: parent.permission.id,
+                      role: parent.permission.role
+                    }
+                  }
                 }
               }
-            }
+            })
           })
-        })
+        )
       })
 
       return newSequence
@@ -186,23 +190,27 @@ export default context =>
           scopeId: scope.id
         })
 
-        parents.forEach(parent => {
-          send({
-            type: 'PATCH_SCOPES',
-            userId: parent.userId,
-            payload: {
-              [parent.id]: {
-                id: parent.id,
-                version: parent.version,
-                type: parent.type,
-                permission: {
-                  id: parent.permission.id,
-                  role: parent.permission.role
+        await Promise.all(
+          parents.map(async parent => {
+            await send({
+              type: 'PATCH',
+              userId: parent.userId,
+              payload: {
+                scopes: {
+                  [parent.id]: {
+                    id: parent.id,
+                    version: parent.version,
+                    type: parent.type,
+                    permission: {
+                      id: parent.permission.id,
+                      role: parent.permission.role
+                    }
+                  }
                 }
               }
-            }
+            })
           })
-        })
+        )
       })
 
       return scope
@@ -222,22 +230,25 @@ export default context =>
         { transaction }
       )
 
-      emit(send =>
-        send({
-          type: 'PATCH_SCOPES',
-          userId: permission.userId,
-          payload: {
-            [permission.scopeId]: {
-              id: permission.scopeId,
-              version: scope.version,
-              type: scope.type,
-              permission: {
-                id: permission.id,
-                role: permission.role
+      emit(
+        async send =>
+          await send({
+            type: 'PATCH_SCOPES',
+            userId: permission.userId,
+            payload: {
+              scopes: {
+                [permission.scopeId]: {
+                  id: permission.scopeId,
+                  version: scope.version,
+                  type: scope.type,
+                  permission: {
+                    id: permission.id,
+                    role: permission.role
+                  }
+                }
               }
             }
-          }
-        })
+          })
       )
 
       return permission
@@ -251,12 +262,13 @@ export default context =>
 
       await permission.destroy({ transaction })
 
-      emit(send =>
-        send({
-          type: 'REMOVE_SCOPE',
-          userId,
-          payload
-        })
+      emit(
+        async send =>
+          await send({
+            type: 'REMOVE_SCOPE',
+            userId,
+            payload
+          })
       )
 
       return permission

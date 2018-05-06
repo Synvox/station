@@ -2,7 +2,7 @@
   "name": "@synvox/station-server",
   "source": "src/index.js",
   "main": "dist/index.js",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "",
   "keywords": [],
   "author": "",
@@ -10,7 +10,8 @@
   "scripts": {
     "build":
       "babel ./src -s -d ./dist --ignore node_modules --ignore \\.test\\.js --copy-files",
-    "dev": "babel-node ./example"
+    "dev": "babel-node ./example",
+    "watch": "nodemon --exec \"clear && npm run build\" --watch ./src"
   },
   "devDependencies": {
     "babel-cli": "^6.26.0",

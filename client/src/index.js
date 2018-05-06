@@ -1,318 +1,318 @@
 import React from 'react'
+import { createStore } from 'redux'
+import { createProvider, connect } from 'react-redux'
+
 import * as handlers from './handlers'
-
-let uniqueId = 0
-
 const CHUNK_SIZE = 1024 * 500
+const STORE_KEY = 'stationStore'
+let send = null
 
-export class Store {
-  constructor(getAuth) {
-    this.state = {}
-    this.subscribers = new Set()
-    this.callbacks = {}
-    this.lockedScopes = new Map()
-    this.ws = null
-    this.file = null
-    this.userToken = getAuth()
-    this.connect()
-    this.ready = () => {}
-    this.isReady = new Promise(ready => {
-      this.ready = () => {
-        this.isReady = true
-        ready()
+const socket = (() => {
+  const fns = {}
+  return {
+    on: (event, fn) => {
+      if (fns[event]) throw new Error(`Handler for ${event} already exists.`)
+      fns[event] = fn
+    },
+    emit: async (event, msg) => {
+      const returned = await fns[event](msg)
+      return returned
+    }
+  }
+})()
+
+socket.on('INIT', async obj => {
+  const transformed = transform(obj)
+
+  for (let [_, scope] of Object.entries(transformed.scopes)) {
+    scope.remote = scope.version
+    scope.version = 0
+  }
+
+  await socket.emit('PATCH', transformed)
+})
+
+{
+  let file = null
+  socket.on('YIELD', (_, send) => {
+    if (!file) {
+      throw new Error(
+        'Cannot begin an upload, no file specified. Pass a file in as a second param.'
+      )
+    }
+
+    if (file.index * CHUNK_SIZE > file.size) return send(JSON.stringify('END'))
+
+    const blob = file.blob.slice(
+      file.index * CHUNK_SIZE,
+      (file.index + 1) * CHUNK_SIZE,
+      file.blob.type
+    )
+
+    file.index += 1
+
+    send(blob)
+  })
+  socket.on('UPLOAD:START', blob => (file = blob))
+  socket.on('UPLOAD:END', () => (file = null))
+}
+
+{
+  const locked = new Map()
+  socket.on('PATCH', async patch => {
+    if (patch.scopes) {
+      for (let [_, scope] of Object.entries(patch.scopes)) {
+        await socket.emit('LOAD_SCOPE', scope)
       }
+    }
+
+    store.dispatch({
+      type: 'PATCH',
+      payload: patch
     })
-    this.emitChange = () => {
-      console.log('emitting change')
-      this.subscribers.forEach(x => x())
-    }
-  }
-  connect() {
-    const ws = (this.ws = new WebSocket(`ws://${window.location.host}`))
 
-    ws.onopen = () => {
-      ws.send(this.userToken)
-    }
+    return patch
+  })
 
-    ws.onmessage = event => {
-      const data = JSON.parse(event.data)
-      if (!data) return
-      if (data.type === 'REPLY' && this.callbacks[data.id]) {
-        this.callbacks[data.id](data.payload)
-      } else if (data.type === 'YIELD') {
-        if (!this.file) {
-          throw new Error(
-            'Cannot begin an upload, no file specified. Pass a file in as a second param.'
-          )
-        }
-
-        if (this.file.index * CHUNK_SIZE > this.file.size)
-          return this.ws.send(JSON.stringify('END'))
-
-        const blob = this.file.blob.slice(
-          this.file.index * CHUNK_SIZE,
-          (this.file.index + 1) * CHUNK_SIZE,
-          this.file.blob.type
-        )
-
-        this.file.index += 1
-
-        this.ws.send(blob)
-      } else if (data.type === 'END') {
-        // file transfer over.
-      } else {
-        if (this.isReady !== true) this.ready()
-        this.reduce(data)
-      }
-    }
-
-    ws.onclose = () => {
-      setTimeout(() => this.connect(), 1000)
-    }
-  }
-  reduce({ type, payload }) {
-    const state = (handlers[type] || (() => this.state))(this.state, payload)
-
-    this.state = this.transform(state)
-
-    this.emitChange()
-  }
-  transformActions({ _actions: actions }) {
-    return actions
-      .map(name => [
-        name,
-        (payload, blob) =>
-          this.send(
-            {
-              type: name,
-              payload
-            },
-            blob
-          )
-      ])
-      .reduce(
-        (obj, [key, item]) =>
-          Object.assign(obj, {
-            [key]: item
-          }),
-        {}
-      )
-  }
-  transformModels(state) {
-    return state._models
-      .map(name => [
-        name,
-        (...scopeIds) =>
-          scopeIds
-            .map(scopeId => {
-              if (!state.scopes[scopeId]) {
-                throw new Error(
-                  `Scope ${scopeId} is not accessable to the user.`
-                )
-              }
-
-              if (
-                !state.scopeData[scopeId] ||
-                Number(state.scopes[scopeId].version) !==
-                  Number(state.scopeData[scopeId].version)
-              ) {
-                if (this.lockedScopes.has(scopeId))
-                  throw this.lockedScopes.get(scopeId)
-
-                const promise = new Promise((resolve, reject) => {
-                  console.warn('promise send')
-                  return this.send({
-                    type: 'loadScope',
-                    payload: {
-                      scopeId: scopeId,
-                      version: (
-                        state.scopeData[scopeId] || {
-                          version: 0
-                        }
-                      ).version
-                    }
-                  })
-                    .then(resolution => {
-                      console.warn('server response')
-                      this.lockedScopes.delete(scopeId)
-                      this.reduce({
-                        type: 'PATCH_SCOPE_DATA',
-                        payload: {
-                          id: scopeId,
-                          ...resolution
-                        }
-                      })
-
-                      console.warn('reduced')
-                      resolve()
-                    })
-                    .catch(reject)
-                })
-
-                this.lockedScopes.set(scopeId, promise)
-
-                throw promise
-              }
-
-              return state.scopeData[scopeId].data[name]
-            })
-            .reduce((obj, item) => Object.assign(obj, item), {})
-      ])
-      .reduce(
-        (obj, [key, item]) =>
-          Object.assign(obj, {
-            [key]: item
-          }),
-        {}
-      )
-  }
-  transform(state) {
-    return {
-      ...state,
-      actions: this.transformActions(state),
-      models: this.transformModels(state)
-    }
-  }
-  subscribe(fn) {
-    this.subscribers.add(fn)
-    return () => this.subscribers.delete(fn)
-  }
-  send(message, blob) {
-    return new Promise((resolve, reject) => {
-      const id = (++uniqueId).toString(36)
-
-      if (blob) {
-        this.file = {
-          blob,
-          size: blob.size,
-          index: 0
-        }
-      }
-
-      this.ws.send(
-        JSON.stringify({
-          id,
-          payload: message
+  socket.on('LOAD_SCOPE', async scope => {
+    const { scopes = {} } = store.getState()
+    if (
+      !scopes[scope.id] ||
+      scopes[scope.id].data === null ||
+      scopes[scope.id].remote !== scope.version
+    ) {
+      const promise =
+        locked.get(scope.id) ||
+        send({
+          type: 'loadScope',
+          payload: {
+            scopeId: scope.id,
+            version:
+              (
+                scopes[scope.id] || {
+                  version: 0
+                }
+              ).version || 0
+          }
         })
-      )
 
-      this.callbacks[id] = msg => {
-        const { ok, data, error } = msg
+      locked.set(scope.id, promise)
+      const data = await promise
 
-        delete this.callbacks[id]
+      locked.delete(scope.id)
 
-        if (blob) {
-          this.file = null
+      scope.version = data.version
+      scope.remote = data.version
+      scope.data = data.patch
+    }
+    return scope
+  })
+
+  socket.on('SUBSCRIBE_SCOPES', async (...scopeIds) => {
+    const { scopes = {} } = store.getState()
+    const patches = await Promise.all(
+      scopeIds.map(async scopeId => {
+        const scope = scopes[scopeId] ? scopes[scopeId] : { id: scopeId }
+        await socket.emit('LOAD_SCOPE', scope)
+        return { [scopeId]: scope }
+      })
+    )
+    await socket.emit('PATCH', {
+      scopes: patches.reduce((obj, item) => Object.assign(obj, item), {})
+    })
+  })
+}
+
+const Station = async (location, getAuth) => {
+  const userToken = await getAuth()
+  await createTransport(location, userToken)
+}
+
+const createTransport = (location, userToken) =>
+  new Promise(resolve => {
+    let isReady = false
+    let callbacks = {}
+    let uniqueId = 0
+    let ws = null
+
+    const connect = () => {
+      ws = new WebSocket(location)
+
+      ws.onopen = () => {
+        ws.send(userToken)
+      }
+
+      ws.onmessage = async event => {
+        const data = JSON.parse(event.data)
+
+        if (!data) return
+
+        if (data.id) {
+          return callbacks[data.id](data)
         }
 
-        if (ok) return resolve(data)
-        return reject(new Error(error))
+        await socket.emit(data.type, data.payload, ws.send)
+
+        if (!isReady) {
+          isReady = true
+          resolve()
+        }
       }
-    })
-  }
-}
 
-class WithData extends React.Component {
-  constructor(props) {
-    super(props)
-    const { defaultProps, parentProps } = props
-
-    this.state = {
-      mappedState:
-        typeof defaultProps === 'function'
-          ? defaultProps(parentProps)
-          : defaultProps
-    }
-  }
-  componentWillMount() {
-    const { store } = this.props
-    this.unsubscribe = store.subscribe(() => this.update())
-    this.update()
-  }
-  componentWillReceiveProps() {
-    setImmediate(() => this.update())
-  }
-  componentWillUnmount() {
-    this.unsubscribe()
-  }
-  update() {
-    const { mapToProps, defaultProps, parentProps, store } = this.props
-
-    console.log('update called')
-
-    let mappedState = null
-    if (store.isReady !== true) {
-      console.warn('store is not ready')
-      mappedState =
-        typeof defaultProps === 'function'
-          ? defaultProps(parentProps)
-          : defaultProps
-    } else {
-      try {
-        console.warn('mapping')
-        mappedState = mapToProps(store.state, parentProps)
-        console.warn('mapping complete', mappedState)
-      } catch (event) {
-        console.warn('mapping failed', mappedState)
-        if (!(event instanceof Promise)) throw event
-        console.warn('thrown', event)
-        mappedState =
-          typeof defaultProps === 'function'
-            ? defaultProps(parentProps)
-            : defaultProps
-        event
-          .then(() => {
-            console.warn('throw release', event)
-            this.update()
-          })
-          .catch(error => {
-            throw error
-          })
+      ws.onclose = () => {
+        setTimeout(() => connect(), 1000)
       }
     }
 
-    console.log('set state', mappedState)
+    send = (message, { file, scopes } = {}) =>
+      new Promise((resolve, reject) => {
+        const id = (++uniqueId).toString(36)
 
-    this.setState({ mappedState })
-  }
-  render() {
-    if (this.state.mappedState == null) {
-      console.log('not rendering', this.state, this)
-      // setTimeout(() => this.update(), 1)
-      return null
-    }
-    return this.props.children(this.state.mappedState)
-  }
-}
+        if (file) {
+          socket.emit('UPLOAD:START', {
+            file,
+            size: file.size,
+            index: 0
+          })
+        }
 
-export function withData(mapState, defaultProps) {
-  class WithDataWrapper extends React.Component {
-    render() {
-      const { props } = this
-      return (
-        <WithData
-          store={props.store}
-          parentProps={props}
-          mapToProps={mapState}
-          defaultProps={defaultProps}>
-          {mappedState => this.props.children({ ...mappedState, ...props })}
-        </WithData>
-      )
-    }
-  }
-
-  return Child => props => (
-    <Consumer>
-      {store => {
-        return (
-          <WithDataWrapper {...props} store={store}>
-            {props => <Child {...props} />}
-          </WithDataWrapper>
+        ws.send(
+          JSON.stringify({
+            id,
+            payload: message,
+            scopes: !scopes
+              ? undefined
+              : scopes
+                  .filter(x => x)
+                  .map(id => [id, store.getState().scopes[id].version])
+                  .reduce(
+                    (obj, [key, item]) =>
+                      Object.assign(obj, {
+                        [key]: item
+                      }),
+                    {}
+                  )
+          })
         )
-      }}
-    </Consumer>
-  )
-}
 
-const { Provider: _Provider, Consumer } = React.createContext()
-export const Provider = _Provider
+        callbacks[id] = async ({
+          payload: { ok, data, error },
+          scopes: scopeData
+        }) => {
+          delete callbacks[id]
+
+          if (file) socket.emit('UPLOAD:END')
+
+          if (scopeData) {
+            socket.emit('PATCH', { scopes: scopeData })
+          }
+
+          if (ok !== false) {
+            resolve(data)
+          } else reject(new Error(error))
+        }
+      })
+
+    connect()
+  })
+
+const transform = patch => ({
+  ...patch,
+  actions: !patch.actions
+    ? {}
+    : patch.actions
+        .map(name => [
+          name,
+          (payload, { file, scopes = [] } = {}) =>
+            send(
+              {
+                type: name,
+                payload
+              },
+              {
+                file,
+                scopes
+              }
+            )
+        ])
+        .reduce(
+          (obj, [key, item]) =>
+            Object.assign(obj, {
+              [key]: item
+            }),
+          {}
+        ),
+  models: !patch.models
+    ? {}
+    : patch.models
+        .map(name => [
+          name,
+          (...scopeIds) =>
+            scopeIds
+              .reduce((a, b) => a.concat(b), [])
+              .map(scopeId => {
+                if (!store.getState().scopes[scopeId])
+                  return new Promise(() => {})
+                const scopes = store.getState().scopes
+                try {
+                  return scopes[scopeId].data[name]
+                } catch (_) {
+                  throw socket.emit('SUBSCRIBE_SCOPES', scopeId)
+                }
+              })
+              .reduce((obj, item) => Object.assign(obj, item), {})
+        ])
+        .reduce(
+          (obj, [key, item]) =>
+            Object.assign(obj, {
+              [key]: item
+            }),
+          {}
+        )
+})
+
+const store = createStore((state = {}, { type, payload }) => {
+  return (handlers[type] || (() => state))(state, payload)
+})
+
+const ReduxProvider = createProvider(STORE_KEY)
+
+const Provider = props => <ReduxProvider {...props} store={store} />
+
+const withData = (mapStateToProps, alternative) => Component =>
+  connect(
+    (state, props) => {
+      try {
+        const mappedState = mapStateToProps(state, props)
+        return mappedState
+      } catch (e) {
+        if (e instanceof Promise) {
+          return {
+            __connectFailed: {}
+          }
+        }
+        throw e
+      }
+    },
+    undefined,
+    undefined,
+    {
+      storeKey: STORE_KEY
+    }
+  )(
+    class extends React.Component {
+      static getDerivedStateFromProps(props, state) {
+        if (props.__connectFailed) return state
+        return props
+      }
+      render() {
+        const state = this.state || this.props
+        if (state.__connectFailed) {
+          return alternative || null
+        }
+        return <Component {...state} />
+      }
+    }
+  )
+
+export { Provider, withData, Station }

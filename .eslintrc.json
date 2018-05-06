@@ -23,7 +23,7 @@
       {
         "vars": "all",
         "args": "after-used",
-        "argsIgnorePattern": "^_"
+        "argsIgnorePattern": "^_+"
       }
     ],
     "react/prop-types": [0],
