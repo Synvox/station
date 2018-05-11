@@ -15,17 +15,20 @@ export default class Action {
 
   async dispatch(payload, user, actions, reply, transaction = null) {
     const deferCommit = Boolean(transaction)
-    if (!transaction) {
-      transaction = await this.sequelize.transaction({
-        isolationLevel: 'READ UNCOMMITTED'
-      })
-      transaction[eventsSym] = []
-    }
+    let tx = transaction
+    let events = []
 
     const resolution = createContext({
-      transaction,
+      getTransaction: async () => {
+        if (!tx) {
+          tx = await this.sequelize.transaction({
+            isolationLevel: 'READ UNCOMMITTED'
+          })
+        }
+        return tx
+      },
       uploadPath: this.uploadPath,
-      emit: fn => transaction[eventsSym].push(fn),
+      emit: fn => events.push(fn),
       user,
       reply,
       models: this.models,
@@ -47,10 +50,10 @@ export default class Action {
 
     try {
       result = await this.resolver(payload, resolution)
-      if (!deferCommit) await transaction.commit()
+      if (!deferCommit && tx) await tx.commit()
     } catch (error) {
       if (error instanceof Error) {
-        await transaction.rollback()
+        if (tx) await tx.rollback()
         throw error
       }
 
@@ -58,9 +61,7 @@ export default class Action {
     }
 
     setTimeout(() => {
-      transaction[eventsSym].map(fn =>
-        fn((...args) => this.emitter.emit(...args))
-      )
+      events.map(fn => fn((...args) => this.emitter.emit(...args)))
     }, 1000)
 
     return result

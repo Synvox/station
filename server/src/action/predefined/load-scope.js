@@ -3,8 +3,8 @@ export default async ({ scopeId, version }, { models, user }) => {
   const { Permission } = userDefined
 
   const Op = Scope.sequelize.constructor.Op
-
   const scope = await Scope.findById(scopeId)
+  if (!scope) throw new Error('Scope not found (' + scopeId + ')')
 
   const getPermission = async scope => {
     let permission = await Permission.findOne({
@@ -20,6 +20,7 @@ export default async ({ scopeId, version }, { models, user }) => {
   }
 
   const permission = await getPermission(scope)
+
   if (!permission) throw new Error('Not authorized')
 
   const sequences = await Sequence.findAll({
@@ -36,7 +37,7 @@ export default async ({ scopeId, version }, { models, user }) => {
 
   const sequenceIds = sequences.map(x => x.id)
 
-  const patch = (await Promise.all(
+  const data = (await Promise.all(
     Object.entries(userDefined).map(async ([_, model]) => {
       const items =
         sequenceIds.length === 0
@@ -51,16 +52,20 @@ export default async ({ scopeId, version }, { models, user }) => {
               (obj, item) => Object.assign(obj, { [item.id]: item.toJSON() }),
               {}
             )
-      return {
-        [model.pluralName]: Object.keys(items).length === 0 ? undefined : items
-      }
+      return [
+        model.pluralName,
+        Object.keys(items).length === 0 ? undefined : items
+      ]
     })
-  )).reduce((obj, item) => Object.assign(obj, item), {})
+  ))
+    .filter(([_, item]) => item)
+    .reduce((obj, [key, item]) => Object.assign(obj, { [key]: item }), {})
 
   return {
     version: Number(scope.version),
-    patch,
+    data,
     id: scopeId,
+    type: scope.type,
     permission: {
       id: permission.id,
       role: permission.role

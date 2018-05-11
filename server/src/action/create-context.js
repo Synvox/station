@@ -23,7 +23,11 @@ const getParents = async ({ Scope, Permission, scopeId }) => {
   }
 
   const permissions = await Permission.findAll({
-    where: { scopeId: { [Op.in]: scopes.map(s => s.id) } }
+    where: {
+      scopeId: {
+        [Op.in]: scopes.map(s => s.id)
+      }
+    }
   })
 
   return scopes
@@ -46,7 +50,9 @@ const getParents = async ({ Scope, Permission, scopeId }) => {
 }
 
 const createFile = (file, totalSize) => {
-  const stream = fs.createWriteStream(path.normalize(file), { flags: 'a' })
+  const stream = fs.createWriteStream(path.normalize(file), {
+    flags: 'a'
+  })
   let ended = false
   let size = 0
   return data =>
@@ -72,8 +78,11 @@ const createFile = (file, totalSize) => {
 export default context =>
   Object.assign(context, {
     fail: async message => {
-      await context.transaction.rollback()
-      throw { error: message }
+      const transaction = await context.getTransaction()
+      await transaction.rollback()
+      throw {
+        error: message
+      }
     },
 
     upload: async file => {
@@ -81,45 +90,57 @@ export default context =>
 
       await new Promise(resolve => {
         const load = () => {
-          context.reply({ type: 'YIELD' }, async (binary, cancel) => {
-            if (binary === 'END') {
-              context.reply({ type: 'END' })
-              resolve()
-              await write()
+          context.reply(
+            {
+              type: 'YIELD'
+            },
+            async (binary, cancel) => {
+              if (binary === 'END') {
+                context.reply({
+                  type: 'END'
+                })
+                resolve()
+                await write()
+              }
+
+              if (typeof binary === 'string') return cancel()
+
+              await write(binary)
+              load()
             }
-
-            if (typeof binary === 'string') return cancel()
-
-            await write(binary)
-            load()
-          })
+          )
         }
 
         load()
       })
-
-      return file
     },
 
     createSequence: async scope => {
       if (!scope) throw new Error('No scope specified to createSequence')
       const {
         models: { Scope, Sequence, Permission },
-        transaction,
+        getTransaction,
         emit
       } = context
+
+      const transaction = await getTransaction()
 
       const newSequence = await Sequence.create(
         {
           version: Number(scope.version) + 1,
           scopeId: scope.id
         },
-        { transaction }
+        {
+          transaction
+        }
       )
 
       scope.currentSequenceId = newSequence.id
       scope.version = newSequence.version
-      await scope.save({ transaction })
+
+      await scope.save({
+        transaction
+      })
 
       emit(async send => {
         const parents = await getParents({
@@ -157,9 +178,11 @@ export default context =>
     createScope: async (entity, parentScope, cascade) => {
       const {
         models: { Sequence, Scope, Permission },
-        transaction,
+        getTransaction,
         emit
       } = context
+
+      const transaction = await getTransaction()
 
       const scope = await Scope.create(
         {
@@ -167,7 +190,9 @@ export default context =>
           parentScopeId: parentScope ? parentScope.id : null,
           cascade
         },
-        { transaction }
+        {
+          transaction
+        }
       )
 
       const sequence = await Sequence.create(
@@ -175,13 +200,17 @@ export default context =>
           version: 1,
           scopeId: scope.id
         },
-        { transaction }
+        {
+          transaction
+        }
       )
 
       scope.currentSequenceId = sequence.id
       scope.version = sequence.version
 
-      await scope.save({ transaction })
+      await scope.save({
+        transaction
+      })
 
       emit(async send => {
         const parents = await getParents({
@@ -217,9 +246,16 @@ export default context =>
     },
 
     grant: async ({ scope, role, user }) => {
-      const { models: { Permission }, transaction, emit } = context
+      const {
+        models: { Permission },
+        getTransaction,
+        createSequence,
+        emit
+      } = context
 
-      const sequence = await context.createSequence(scope)
+      const transaction = await getTransaction()
+
+      const sequence = await createSequence(scope)
       const permission = await Permission.create(
         {
           scopeId: scope.id,
@@ -227,13 +263,15 @@ export default context =>
           userId: user.id,
           sequenceId: sequence.id
         },
-        { transaction }
+        {
+          transaction
+        }
       )
 
       emit(
         async send =>
           await send({
-            type: 'PATCH_SCOPES',
+            type: 'PATCH',
             userId: permission.userId,
             payload: {
               scopes: {
@@ -255,12 +293,16 @@ export default context =>
     },
 
     ungrant: async permission => {
-      const { transaction, emit } = context
+      const { getTransaction, emit } = context
+
+      const transaction = await getTransaction()
 
       const userId = permission.userId
       const payload = permission.scopeId
 
-      await permission.destroy({ transaction })
+      await permission.destroy({
+        transaction
+      })
 
       emit(
         async send =>
@@ -275,10 +317,15 @@ export default context =>
     },
 
     getRole: async (user, scope) => {
-      const { models: { Permission, Scope } } = context
+      const {
+        models: { Permission, Scope }
+      } = context
       while (scope) {
         const permission = await Permission.findOne({
-          where: { scopeId: scope.id, userId: user.id }
+          where: {
+            scopeId: scope.id,
+            userId: user.id
+          }
         })
         if (permission) return permission.role
         if (scope.parentScopeId && scope.cascade) {

@@ -2,11 +2,10 @@
   "name": "@synvox/station-client",
   "source": "src/index.js",
   "main": "dist/index.js",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "",
   "scripts": {
-    "build":
-      "babel ./src -s -d ./dist --ignore node_modules --ignore \\.test\\.js --copy-files",
+    "build": "babel ./src -s -d ./dist --ignore node_modules --ignore \\.test\\.js --copy-files",
     "dev": "nodemon --exec \"clear && npm run build\" --watch ./src"
   },
   "keywords": [],

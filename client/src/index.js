@@ -14,8 +14,10 @@ const socket = (() => {
       if (fns[event]) throw new Error(`Handler for ${event} already exists.`)
       fns[event] = fn
     },
-    emit: async (event, msg) => {
-      const returned = await fns[event](msg)
+    emit: async (event, msg, send) => {
+      if (!fns[event]) return
+      console.log('emitting', event, msg)
+      const returned = await fns[event](msg, send)
       return returned
     }
   }
@@ -26,7 +28,6 @@ socket.on('INIT', async obj => {
 
   for (let [_, scope] of Object.entries(transformed.scopes)) {
     scope.remote = scope.version
-    scope.version = 0
   }
 
   await socket.emit('PATCH', transformed)
@@ -34,6 +35,7 @@ socket.on('INIT', async obj => {
 
 {
   let file = null
+
   socket.on('YIELD', (_, send) => {
     if (!file) {
       throw new Error(
@@ -43,28 +45,34 @@ socket.on('INIT', async obj => {
 
     if (file.index * CHUNK_SIZE > file.size) return send(JSON.stringify('END'))
 
-    const blob = file.blob.slice(
+    const blob = file.file.slice(
       file.index * CHUNK_SIZE,
       (file.index + 1) * CHUNK_SIZE,
-      file.blob.type
+      file.type
     )
 
     file.index += 1
 
     send(blob)
   })
-  socket.on('UPLOAD:START', blob => (file = blob))
-  socket.on('UPLOAD:END', () => (file = null))
+
+  socket.on('UPLOAD:START', def => {
+    file = def
+  })
+
+  socket.on('UPLOAD:END', () => {
+    file = null
+  })
 }
 
 {
   const locked = new Map()
   socket.on('PATCH', async patch => {
-    if (patch.scopes) {
-      for (let [_, scope] of Object.entries(patch.scopes)) {
-        await socket.emit('LOAD_SCOPE', scope)
-      }
-    }
+    // if (patch.scopes) {
+    //   for (let [_, scope] of Object.entries(patch.scopes)) {
+    //     await socket.emit('LOAD_SCOPE', scope)
+    //   }
+    // }
 
     store.dispatch({
       type: 'PATCH',
@@ -103,7 +111,6 @@ socket.on('INIT', async obj => {
 
       scope.version = data.version
       scope.remote = data.version
-      scope.data = data.patch
     }
     return scope
   })
@@ -111,10 +118,17 @@ socket.on('INIT', async obj => {
   socket.on('SUBSCRIBE_SCOPES', async (...scopeIds) => {
     const { scopes = {} } = store.getState()
     const patches = await Promise.all(
-      scopeIds.map(async scopeId => {
-        const scope = scopes[scopeId] ? scopes[scopeId] : { id: scopeId }
+      scopeIds.filter(x => x).map(async scopeId => {
+        const scope = scopes[scopeId]
+          ? scopes[scopeId]
+          : {
+              id: scopeId
+            }
+
         await socket.emit('LOAD_SCOPE', scope)
-        return { [scopeId]: scope }
+        return {
+          [scopeId]: scope
+        }
       })
     )
     await socket.emit('PATCH', {
@@ -123,12 +137,12 @@ socket.on('INIT', async obj => {
   })
 }
 
-const Station = async (location, getAuth) => {
+const Station = async (location, getAuth, unauthorizedCb) => {
   const userToken = await getAuth()
-  await createTransport(location, userToken)
+  await createTransport(location, userToken, unauthorizedCb)
 }
 
-const createTransport = (location, userToken) =>
+const createTransport = (location, userToken, unauthorizedCb) =>
   new Promise(resolve => {
     let isReady = false
     let callbacks = {}
@@ -145,13 +159,16 @@ const createTransport = (location, userToken) =>
       ws.onmessage = async event => {
         const data = JSON.parse(event.data)
 
+        if (data.type === 'error' && data.payload === 'unauthenticated')
+          return unauthorizedCb(data)
+
         if (!data) return
 
         if (data.id) {
           return callbacks[data.id](data)
         }
 
-        await socket.emit(data.type, data.payload, ws.send)
+        await socket.emit(data.type, data.payload, x => ws.send(x))
 
         if (!isReady) {
           isReady = true
@@ -164,7 +181,7 @@ const createTransport = (location, userToken) =>
       }
     }
 
-    send = (message, { file, scopes } = {}) =>
+    send = (message, { file } = {}) =>
       new Promise((resolve, reject) => {
         const id = (++uniqueId).toString(36)
 
@@ -176,22 +193,22 @@ const createTransport = (location, userToken) =>
           })
         }
 
+        const scopes = store.getState().scopes || {}
+        const scopeVersionMap = Object.entries(scopes)
+          .map(([id, { version }]) => [id, version])
+          .reduce(
+            (obj, [key, item]) =>
+              Object.assign(obj, {
+                [key]: item
+              }),
+            {}
+          )
+
         ws.send(
           JSON.stringify({
             id,
             payload: message,
-            scopes: !scopes
-              ? undefined
-              : scopes
-                  .filter(x => x)
-                  .map(id => [id, store.getState().scopes[id].version])
-                  .reduce(
-                    (obj, [key, item]) =>
-                      Object.assign(obj, {
-                        [key]: item
-                      }),
-                    {}
-                  )
+            scopes: scopeVersionMap
           })
         )
 
@@ -204,7 +221,9 @@ const createTransport = (location, userToken) =>
           if (file) socket.emit('UPLOAD:END')
 
           if (scopeData) {
-            socket.emit('PATCH', { scopes: scopeData })
+            socket.emit('PATCH', {
+              scopes: scopeData
+            })
           }
 
           if (ok !== false) {
@@ -254,9 +273,11 @@ const transform = patch => ({
                 if (!store.getState().scopes[scopeId])
                   return new Promise(() => {})
                 const scopes = store.getState().scopes
+
                 try {
                   return scopes[scopeId].data[name]
                 } catch (_) {
+                  console.warn('COULD NOT ACCESS', scopeId)
                   throw socket.emit('SUBSCRIBE_SCOPES', scopeId)
                 }
               })

@@ -1,4 +1,4 @@
-import WebSocket from 'ws'
+import WebSocket from 'uws'
 import Emitter from './emitter'
 import Model from './model'
 import Action from './action'
