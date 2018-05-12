@@ -16,7 +16,6 @@ const socket = (() => {
     },
     emit: async (event, msg, send) => {
       if (!fns[event]) return
-      console.log('emitting', event, msg)
       const returned = await fns[event](msg, send)
       return returned
     }
@@ -277,7 +276,6 @@ const transform = patch => ({
                 try {
                   return scopes[scopeId].data[name]
                 } catch (_) {
-                  console.warn('COULD NOT ACCESS', scopeId)
                   throw socket.emit('SUBSCRIBE_SCOPES', scopeId)
                 }
               })
