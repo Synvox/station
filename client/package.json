@@ -37,10 +37,18 @@
     "json-criteria": "^2.6.0",
     "prop-types": "^15.6.1",
     "react-broadcast": "0.7.0-rc.4",
-    "recompose": "^0.26.0"
+    "recompose": "^0.26.0",
+    "redux-persist": "^5.9.1"
   },
   "babel": {
-    "presets": ["es2015", "stage-0", "react"],
-    "plugins": ["transform-runtime", "add-module-exports"]
+    "presets": [
+      "es2015",
+      "stage-0",
+      "react"
+    ],
+    "plugins": [
+      "transform-runtime",
+      "add-module-exports"
+    ]
   }
 }

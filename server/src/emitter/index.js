@@ -2,7 +2,7 @@ import NRP from 'node-redis-pubsub'
 
 export default class Emitter {
   constructor(url) {
-    this.nrp = new NRP({ url })
+    this.nrp = new NRP({ url, scope: 'station' })
 
     this.users = {}
 

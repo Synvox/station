@@ -70,7 +70,7 @@ const createFile = (file, totalSize) => {
             )
           )
         }
-        stream.write(data, resolve)
+        stream.write(new Buffer(data), resolve)
       }
     })
 }
@@ -113,6 +113,22 @@ export default context =>
 
         load()
       })
+    },
+
+    getUserScope: async user => {
+      const {
+        models: { Scope, User },
+        createScope,
+        grant
+      } = context
+
+      let userScope = await Scope.findById(user.id)
+      if (userScope) return userScope
+
+      userScope = await createScope(user)
+      await grant({ scope: userScope, role: 'admin', user: user })
+
+      return userScope
     },
 
     createSequence: async scope => {
@@ -186,7 +202,8 @@ export default context =>
 
       const scope = await Scope.create(
         {
-          type: entity.name,
+          id: entity.id ? entity.id : undefined,
+          type: entity.name || entity.constructor.name,
           parentScopeId: parentScope ? parentScope.id : null,
           cascade
         },

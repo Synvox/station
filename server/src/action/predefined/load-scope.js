@@ -1,10 +1,13 @@
 export default async ({ scopeId, version }, { models, user }) => {
-  const { Scope, Sequence, User: _User, ...userDefined } = models
-  const { Permission } = userDefined
+  const userDefined = Object.entries(models)
+    .filter(([_, model]) => model.rawAttributes.sequenceId)
+    .reduce((obj, [key, value]) => Object.assign(obj, { [key]: value }), {})
+
+  const { Permission, Scope, Sequence } = models
 
   const Op = Scope.sequelize.constructor.Op
   const scope = await Scope.findById(scopeId)
-  if (!scope) throw new Error('Scope not found (' + scopeId + ')')
+  if (!scope) throw new Error(`Scope not found (${scopeId})`)
 
   const getPermission = async scope => {
     let permission = await Permission.findOne({
@@ -37,29 +40,37 @@ export default async ({ scopeId, version }, { models, user }) => {
 
   const sequenceIds = sequences.map(x => x.id)
 
-  const data = (await Promise.all(
-    Object.entries(userDefined).map(async ([_, model]) => {
-      const items =
-        sequenceIds.length === 0
-          ? {}
-          : (await model.findAll({
-              where: {
-                sequenceId: {
-                  [Op.in]: sequenceIds
+  const chunkSize = 50
+  const data = {}
+
+  for (let i = 0; i < Math.ceil(sequenceIds.length / chunkSize); i++) {
+    let ids = sequenceIds.slice(i * chunkSize, (i + 1) * chunkSize)
+    const slice = (await Promise.all(
+      Object.entries(userDefined).map(async ([_, model]) => {
+        const items =
+          ids.length === 0
+            ? {}
+            : (await model.findAll({
+                where: {
+                  sequenceId: {
+                    [Op.in]: ids
+                  }
                 }
-              }
-            })).reduce(
-              (obj, item) => Object.assign(obj, { [item.id]: item.toJSON() }),
-              {}
-            )
-      return [
-        model.pluralName,
-        Object.keys(items).length === 0 ? undefined : items
-      ]
-    })
-  ))
-    .filter(([_, item]) => item)
-    .reduce((obj, [key, item]) => Object.assign(obj, { [key]: item }), {})
+              })).reduce(
+                (obj, item) => Object.assign(obj, { [item.id]: item.toJSON() }),
+                {}
+              )
+        return [
+          model.pluralName,
+          Object.keys(items).length === 0 ? undefined : items
+        ]
+      })
+    ))
+      .filter(([_, item]) => item)
+      .reduce((obj, [key, item]) => Object.assign(obj, { [key]: item }), {})
+
+    Object.assign(data, slice)
+  }
 
   return {
     version: Number(scope.version),

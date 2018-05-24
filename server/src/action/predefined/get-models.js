@@ -1,10 +1,7 @@
 export default async (_, { models }) => {
-  const {
-    Scope: _Scope,
-    Sequence: _Sequence,
-    User: _User,
-    ...userDefined
-  } = models
+  const userDefined = Object.entries(models)
+    .filter(([_, model]) => model.rawAttributes.sequenceId)
+    .reduce((obj, [key, value]) => Object.assign(obj, { [key]: value }), {})
 
   return Object.entries(userDefined).map(([_, model]) => model.pluralName)
 }

@@ -1,12 +1,12 @@
 export default class Connection {
-  constructor({ user, server, conn }) {
+  constructor({ user, server, conn, scopes }) {
     conn.removeAllListeners()
     this.server = server
     this.conn = conn
     this.user = user
     this.once = null
     this.timeout = null
-    this.scopes = {}
+    this.scopes = scopes
 
     this.reply = async (val, once) => {
       if (once) this.once = once
@@ -68,9 +68,9 @@ export default class Connection {
       payload: {
         user: this.user,
         users,
-        actions,
+        actionNames: actions,
         scopes: scopeData,
-        models
+        modelDefs: models
       }
     })
   }
@@ -97,7 +97,7 @@ export default class Connection {
     })
   }
 
-  async getScopes(scopes = {}) {
+  async getScopes(scopes = this.scopes) {
     const allScopes = (await this.dispatch({
       type: 'getScopes'
     })).data
@@ -110,9 +110,16 @@ export default class Connection {
       ...scopes
     }
 
+    for (let scopeId in scopeVersionMap) {
+      const version = scopeVersionMap[scopeId]
+      if (version === allScopes[scopeId].version)
+        delete scopeVersionMap[scopeId]
+    }
+
     const scopeData = (await Promise.all(
       Object.entries(scopeVersionMap).map(async ([scopeId, version]) => [
         scopeId,
+        // allScopes[scopeId] // @todo reenable this
         (await this.dispatch({
           type: 'loadScope',
           payload: {
@@ -129,13 +136,17 @@ export default class Connection {
       {}
     )
 
+    this.scopes = Object.entries(scopeData)
+      .map(([id, { version }]) => [id, version])
+      .reduce((obj, [key, val]) => Object.assign(obj, { [key]: val }), {})
+
     return scopeData
   }
 
   static async create(server, conn) {
-    const token = await new Promise(resolve => {
+    const { token, scopes } = await new Promise(resolve => {
       conn.once('message', t => {
-        resolve(t)
+        resolve(JSON.parse(t))
       })
     })
 
@@ -151,6 +162,7 @@ export default class Connection {
       )
 
     return new Connection({
+      scopes,
       user,
       server,
       conn

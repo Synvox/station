@@ -141,6 +141,20 @@ const Station = async (location, getAuth, unauthorizedCb) => {
   await createTransport(location, userToken, unauthorizedCb)
 }
 
+const getScopeVersionMap = () => {
+  const scopes = store.getState().scopes || {}
+  const scopeVersionMap = Object.entries(scopes)
+    .map(([id, { version }]) => [id, version])
+    .reduce(
+      (obj, [key, item]) =>
+        Object.assign(obj, {
+          [key]: item
+        }),
+      {}
+    )
+  return scopeVersionMap
+}
+
 const createTransport = (location, userToken, unauthorizedCb) =>
   new Promise(resolve => {
     let isReady = false
@@ -152,7 +166,9 @@ const createTransport = (location, userToken, unauthorizedCb) =>
       ws = new WebSocket(location)
 
       ws.onopen = () => {
-        ws.send(userToken)
+        ws.send(
+          JSON.stringify({ token: userToken, scopes: getScopeVersionMap() })
+        )
       }
 
       ws.onmessage = async event => {
@@ -192,16 +208,7 @@ const createTransport = (location, userToken, unauthorizedCb) =>
           })
         }
 
-        const scopes = store.getState().scopes || {}
-        const scopeVersionMap = Object.entries(scopes)
-          .map(([id, { version }]) => [id, version])
-          .reduce(
-            (obj, [key, item]) =>
-              Object.assign(obj, {
-                [key]: item
-              }),
-            {}
-          )
+        const scopeVersionMap = getScopeVersionMap()
 
         ws.send(
           JSON.stringify({
@@ -236,9 +243,9 @@ const createTransport = (location, userToken, unauthorizedCb) =>
 
 const transform = patch => ({
   ...patch,
-  actions: !patch.actions
+  actions: !patch.actionNames
     ? {}
-    : patch.actions
+    : patch.actionNames
         .map(name => [
           name,
           (payload, { file, scopes = [] } = {}) =>
@@ -260,9 +267,9 @@ const transform = patch => ({
             }),
           {}
         ),
-  models: !patch.models
+  models: !patch.modelDefs
     ? {}
-    : patch.models
+    : patch.modelDefs
         .map(name => [
           name,
           (...scopeIds) =>
@@ -290,9 +297,30 @@ const transform = patch => ({
         )
 })
 
-const store = createStore((state = {}, { type, payload }) => {
+let defaultState = {}
+
+// try {
+//   defaultState = transform(JSON.parse(localStorage['station-storage']))
+// } catch (e) {
+//   console.log(e)
+//   /*noop*/
+// }
+
+const store = createStore((state = defaultState, { type, payload }) => {
   return (handlers[type] || (() => state))(state, payload)
 })
+
+// {
+//   let timeout = null
+//   store.subscribe(() => {
+//     clearTimeout(timeout)
+//     timeout = setTimeout(() => {
+//       requestAnimationFrame(() => {
+//         localStorage['station-storage'] = JSON.stringify(store.getState())
+//       })
+//     }, 1000)
+//   })
+// }
 
 const ReduxProvider = createProvider(STORE_KEY)
 
