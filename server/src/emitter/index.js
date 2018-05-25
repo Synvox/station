@@ -26,9 +26,10 @@ export default class Emitter {
   }
 
   receive(event) {
-    const { type, userId, payload } = event
+    const { userId } = event
 
-    if (this.users[userId])
-      this.users[userId].forEach(fn => fn({ type, payload }))
+    if (this.users[userId]) {
+      this.users[userId].forEach(fn => fn())
+    }
   }
 }

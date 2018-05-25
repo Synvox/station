@@ -26,7 +26,7 @@ socket.on('INIT', async obj => {
   const transformed = transform(obj)
 
   for (let [_, scope] of Object.entries(transformed.scopes)) {
-    scope.remote = scope.version
+    scope.local = scope.version
   }
 
   await socket.emit('PATCH', transformed)
@@ -86,7 +86,7 @@ socket.on('INIT', async obj => {
     if (
       !scopes[scope.id] ||
       scopes[scope.id].data === null ||
-      scopes[scope.id].remote !== scope.version
+      scopes[scope.id].local !== scope.version
     ) {
       const promise =
         locked.get(scope.id) ||
@@ -109,7 +109,7 @@ socket.on('INIT', async obj => {
       locked.delete(scope.id)
 
       scope.version = data.version
-      scope.remote = data.version
+      scope.local = data.version
     }
     return scope
   })
@@ -139,6 +139,7 @@ socket.on('INIT', async obj => {
 const Station = async (location, getAuth, unauthorizedCb) => {
   const userToken = await getAuth()
   await createTransport(location, userToken, unauthorizedCb)
+  return store.getState().actions
 }
 
 const getScopeVersionMap = () => {

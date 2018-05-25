@@ -13,7 +13,14 @@ export default class Connection {
       this.conn.send(JSON.stringify(val))
     }
 
-    const unsubscribe = server.emitter.addUser(user.id, this.reply)
+    const unsubscribe = server.emitter.addUser(user.id, async () => {
+      this.conn.send(
+        JSON.stringify({
+          type: 'PATCH',
+          payload: { scopes: await this.getScopes() }
+        })
+      )
+    })
 
     conn.on('message', str => {
       if (this.timeout) clearTimeout(this.timeout)
@@ -83,14 +90,14 @@ export default class Connection {
       if (!payload) throw new Error('No payload specified.')
       if (payload.type) return reply(payload, once)
 
-      const scopeData = await this.getScopes(scopes)
+      // const scopeData = await this.getScopes(scopes)
 
       reply(
         {
           id,
           type: 'REPLY',
-          payload,
-          scopes: scopeData
+          payload
+          // scopes: scopeData
         },
         once
       )

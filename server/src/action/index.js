@@ -1,8 +1,6 @@
 import createContext from './create-context'
 import * as predefined from './predefined'
 
-const eventsSym = Symbol()
-
 export default class Action {
   constructor(name, resolver, models, sequelize, emitter, uploadPath) {
     this.name = name
@@ -16,7 +14,8 @@ export default class Action {
   async dispatch(payload, user, actions, reply, transaction = null) {
     const deferCommit = Boolean(transaction)
     let tx = transaction
-    let events = []
+
+    let emits = []
 
     const resolution = createContext({
       getTransaction: async () => {
@@ -28,7 +27,7 @@ export default class Action {
         return tx
       },
       uploadPath: this.uploadPath,
-      emit: fn => events.push(fn),
+      emit: x => emits.push(x),
       user,
       reply,
       models: this.models,
@@ -60,9 +59,11 @@ export default class Action {
       return error
     }
 
-    setTimeout(() => {
-      events.map(fn => fn((...args) => this.emitter.emit(...args)))
-    }, 1000)
+    await Promise.all(
+      emits.map(async x => {
+        await x(y => this.emitter.emit(y))
+      })
+    )
 
     return result
   }
