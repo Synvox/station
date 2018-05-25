@@ -2,13 +2,14 @@
   "name": "@synvox/station-server",
   "source": "src/index.js",
   "main": "dist/index.js",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "",
   "keywords": [],
   "author": "",
   "license": "ISC",
   "scripts": {
-    "build": "babel ./src -s -d ./dist --ignore node_modules --ignore \\.test\\.js --copy-files",
+    "build":
+      "babel ./src -s -d ./dist --ignore node_modules --ignore \\.test\\.js --copy-files",
     "dev": "babel-node ./example",
     "watch": "nodemon --exec \"clear && npm run build\" --watch ./src"
   },
@@ -37,14 +38,7 @@
     "ws": "^5.1.0"
   },
   "babel": {
-    "presets": [
-      "es2015",
-      "stage-0",
-      "react"
-    ],
-    "plugins": [
-      "transform-runtime",
-      "add-module-exports"
-    ]
+    "presets": ["es2015", "stage-0", "react"],
+    "plugins": ["transform-runtime", "add-module-exports"]
   }
 }
