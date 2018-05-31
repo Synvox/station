@@ -43,8 +43,9 @@ export default async ({ scopeId, version }, { models, user }) => {
   const chunkSize = 50
   const data = {}
 
-  for (let i = 0; i < Math.ceil(sequenceIds.length / chunkSize); i++) {
-    let ids = sequenceIds.slice(i * chunkSize, (i + 1) * chunkSize)
+  for (let i = 0; i < sequenceIds.length; i += chunkSize) {
+    let ids = sequenceIds.slice(i, i + chunkSize)
+
     const slice = (await Promise.all(
       Object.entries(userDefined).map(async ([_, model]) => {
         const items =
@@ -69,7 +70,10 @@ export default async ({ scopeId, version }, { models, user }) => {
       .filter(([_, item]) => item)
       .reduce((obj, [key, item]) => Object.assign(obj, { [key]: item }), {})
 
-    Object.assign(data, slice)
+    for (let key in slice) {
+      if (!data[key]) data[key] = {}
+      Object.assign(data[key], slice[key])
+    }
   }
 
   return {

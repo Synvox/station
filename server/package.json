@@ -34,8 +34,7 @@
     "md5": "^2.2.1",
     "node-redis-pubsub": "^2.0.0",
     "sequelize": "^4.37.3",
-    "uws": "^10.148.0",
-    "ws": "^5.1.0"
+    "uws": "^10.148.0"
   },
   "babel": {
     "presets": ["es2015", "stage-0", "react"],
