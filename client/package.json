@@ -2,7 +2,7 @@
   "name": "@synvox/station-client",
   "source": "src/index.js",
   "main": "dist/index.js",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "",
   "scripts": {
     "build": "babel ./src -s -d ./dist --ignore node_modules --ignore \\.test\\.js --copy-files",
