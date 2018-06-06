@@ -60,9 +60,11 @@ export default class Action {
     }
 
     await Promise.all(
-      emits.map(async x => {
-        await x(y => this.emitter.emit(y))
-      })
+      emits.map(fn =>
+        fn(payload => {
+          this.emitter.emit(payload)
+        })
+      )
     )
 
     return result

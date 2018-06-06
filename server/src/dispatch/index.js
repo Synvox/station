@@ -1,8 +1,5 @@
 export default (models, actions) => (input, user, reply) => {
-  const {
-    type,
-    payload
-  } = input
+  const { type, payload } = input
 
   if (!actions[type])
     return reply({

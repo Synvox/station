@@ -77,7 +77,7 @@ export default context =>
           scope: scope
         })
 
-        obs.forEach(o => send({ userId: o }))
+        obs.forEach(o => send({ userId: o, scopeId: scope.id }))
       })
     },
 

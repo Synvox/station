@@ -7,19 +7,40 @@ export default class Connection {
     this.once = null
     this.timeout = null
     this.scopes = scopes
+    this.queue = []
+    this.isRunning = false
 
-    this.reply = async (val, once) => {
-      if (once) this.once = once
-      this.conn.send(JSON.stringify(val))
+    const runReplies = async () => {
+      if (this.isRunning) return
+      this.isRunning = true
+      for (let item of this.queue) {
+        await item
+      }
+      this.isRunning = false
     }
 
+    this.reply = (val, once) => {
+      const promise = new Promise(resolve => {
+        if (once) this.once = once
+        this.conn.send(JSON.stringify(val))
+        resolve()
+      })
+      this.queue.push(promise)
+      runReplies().catch(console.error)
+
+      return promise
+    }
+
+    let isLocked = false
     const unsubscribe = server.emitter.addUser(user.id, async () => {
-      this.conn.send(
-        JSON.stringify({
-          type: 'PATCH',
-          payload: { scopes: await this.getScopes() }
-        })
-      )
+      if (isLocked) return
+
+      isLocked = true
+      await this.reply({
+        type: 'PATCH',
+        payload: { scopes: await this.getScopes() }
+      })
+      isLocked = false
     })
 
     conn.on('message', str => {
@@ -90,14 +111,16 @@ export default class Connection {
       if (!payload) throw new Error('No payload specified.')
       if (payload.type) return reply(payload, once)
 
-      // const scopeData = await this.getScopes(scopes)
+      await this.reply({
+        type: 'PATCH',
+        payload: { scopes: await this.getScopes() }
+      })
 
       reply(
         {
           id,
           type: 'REPLY',
           payload
-          // scopes: scopeData
         },
         once
       )

@@ -26,10 +26,10 @@ export default class Emitter {
   }
 
   receive(event) {
-    const { userId } = event
+    const { userId, scopeId } = event
 
     if (this.users[userId]) {
-      this.users[userId].forEach(fn => fn())
+      this.users[userId].forEach(fn => fn({ scopeId }))
     }
   }
 }
